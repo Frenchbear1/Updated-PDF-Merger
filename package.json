@@ -1,0 +1,20 @@
+{
+  "name": "updated-pdf-merger",
+  "version": "1.0.0",
+  "description": "Electron PDF merger with drag sorting and advanced ordering",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "electron": "^40.2.1",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5"
+  }
+}

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Merger</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>PDF Merger</h1>
+      </div>
+      <div class="window-controls">
+        <button id="winMinBtn" class="win-btn" type="button" aria-label="Minimize">
+          <span class="win-icon min"></span>
+        </button>
+        <button id="winMaxBtn" class="win-btn" type="button" aria-label="Maximize">
+          <span class="win-icon max"></span>
+        </button>
+        <button id="winCloseBtn" class="win-btn close" type="button" aria-label="Close">
+          <span class="win-icon close"></span>
+        </button>
+      </div>
+    </header>
+
+    <section id="dropZone" class="drop-zone">
+      <p>Drop PDF files here or click this <span class="accent-text">drop area</span>.</p>
+    </section>
+
+    <section class="controls-row">
+      <div class="control-group">
+        <label for="sortMode">Sort Mode</label>
+        <select id="sortMode">
+          <option value="manual">Manual (Drag)</option>
+          <option value="alpha">Alphabetical</option>
+          <option value="numeric">Numerical</option>
+          <option value="created">Created Date/Time</option>
+        </select>
+      </div>
+
+      <div class="control-group narrow">
+        <label for="sortDirection">Direction</label>
+        <select id="sortDirection">
+          <option value="asc">Ascending</option>
+          <option value="desc">Descending</option>
+        </select>
+      </div>
+
+      <div class="control-group grow">
+        <label for="outputName">Output File Name</label>
+        <input id="outputName" type="text" value="merged-output" placeholder="merged-output" />
+      </div>
+
+      <button id="mergeBtn" class="btn accent large">Merge PDFs</button>
+    </section>
+    <p id="mergeModeHint" class="merge-mode-hint" hidden></p>
+
+    <section class="list-wrap">
+      <div class="list-head">
+        <h2>Live Merge Order</h2>
+        <div class="list-actions">
+          <button id="clearBtn" class="btn subtle">Clear</button>
+        </div>
+      </div>
+
+      <ul id="fileList" class="file-list"></ul>
+      <p id="emptyState" class="empty-state">No files selected.</p>
+    </section>
+
+    <footer class="status-bar">
+      <div class="progress-wrap">
+        <div class="progress-track">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div id="statusText" class="status-text">Ready</div>
+        <button id="stopMergeBtn" class="stop-btn" hidden>Stop</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
