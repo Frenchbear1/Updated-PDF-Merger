@@ -26,8 +26,11 @@
     "files": [
       "**/*",
       "!_portable_build/**",
+      "!_release_portable/**",
       "!dist/**",
-      "!.git/**"
+      "!.git/**",
+      "!*.zip",
+      "!*.7z"
     ],
     "extraResources": [
       {
