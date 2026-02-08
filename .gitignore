@@ -6,3 +6,6 @@ out/
 .DS_Store
 Thumbs.db
 PDF Merger Portable.zip
+PDF.Merger.Portable.zip
+_portable_build/
+_release_portable/

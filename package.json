@@ -4,7 +4,8 @@
   "description": "Electron PDF merger with drag sorting and advanced ordering",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "build:win": "electron-builder --win portable"
   },
   "keywords": [],
   "author": "",
@@ -13,8 +14,33 @@
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
+    "electron-builder": "^26.0.12",
     "electron": "^40.2.1",
     "png-to-ico": "^3.0.1",
     "sharp": "^0.34.5"
+  },
+  "build": {
+    "appId": "com.labar.pdfmerger",
+    "productName": "Updated PDF Merger",
+    "asar": true,
+    "files": [
+      "**/*",
+      "!_portable_build/**",
+      "!dist/**",
+      "!.git/**"
+    ],
+    "extraResources": [
+      {
+        "from": "tools",
+        "to": "tools"
+      }
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "assets/build-icon.ico",
+      "artifactName": "Updated-PDF-Merger-Portable-${version}.${ext}"
+    }
   }
 }

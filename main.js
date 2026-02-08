@@ -6,11 +6,8 @@ const { spawn } = require('child_process');
 const os = require('os');
 
 const SPLIT_TRIGGER_BYTES = 500 * 1024 * 1024;
-const TEMP_ROOT = path.join(__dirname, 'temp-processing');
-const TOOLS_ROOT = path.join(__dirname, 'tools');
 const QPDF_VERSION = '12.3.2';
 const QPDF_FOLDER = `qpdf-${QPDF_VERSION}-mingw64`;
-const QPDF_EXE = path.join(TOOLS_ROOT, QPDF_FOLDER, 'bin', 'qpdf.exe');
 const QPDF_DOWNLOAD_URL = `https://github.com/qpdf/qpdf/releases/download/v${QPDF_VERSION}/${QPDF_FOLDER}.zip`;
 const MAX_INPUTS_PER_MERGE_CALL = 24;
 const DIRECT_ARG_CHAR_LIMIT = 26000;
@@ -20,6 +17,13 @@ const MIN_FAST_MEMORY_BYTES = 384 * 1024 * 1024;
 const MAX_FAST_MEMORY_BYTES = 1200 * 1024 * 1024;
 const APP_ICON_ICO = path.join(__dirname, 'assets', 'app-icon.ico');
 const APP_ICON_PNG = path.join(__dirname, 'assets', 'app-icon.png');
+const TEMP_ROOT = path.join(app.getPath('temp'), 'updated-pdf-merger');
+const BUNDLED_TOOLS_ROOT = app.isPackaged
+  ? path.join(process.resourcesPath, 'tools')
+  : path.join(__dirname, 'tools');
+const CACHE_TOOLS_ROOT = path.join(app.getPath('userData'), 'tools');
+const BUNDLED_QPDF_EXE = path.join(BUNDLED_TOOLS_ROOT, QPDF_FOLDER, 'bin', 'qpdf.exe');
+const CACHE_QPDF_EXE = path.join(CACHE_TOOLS_ROOT, QPDF_FOLDER, 'bin', 'qpdf.exe');
 
 let mainWindow;
 let activeMerge = null;
@@ -158,23 +162,30 @@ async function downloadFile(url, outputPath) {
 
 async function ensureQpdf() {
   try {
-    await fs.access(QPDF_EXE);
-    return QPDF_EXE;
+    await fs.access(BUNDLED_QPDF_EXE);
+    return BUNDLED_QPDF_EXE;
+  } catch {
+    // continue
+  }
+
+  try {
+    await fs.access(CACHE_QPDF_EXE);
+    return CACHE_QPDF_EXE;
   } catch {
     // continue
   }
 
   if (!qpdfSetupPromise) {
     qpdfSetupPromise = (async () => {
-      await fs.mkdir(TOOLS_ROOT, { recursive: true });
-      const zipPath = path.join(TOOLS_ROOT, `${QPDF_FOLDER}.zip`);
+      await fs.mkdir(CACHE_TOOLS_ROOT, { recursive: true });
+      const zipPath = path.join(CACHE_TOOLS_ROOT, `${QPDF_FOLDER}.zip`);
 
       await downloadFile(QPDF_DOWNLOAD_URL, zipPath);
       try {
-        await runProcess('tar', ['-xf', zipPath, '-C', TOOLS_ROOT]);
+        await runProcess('tar', ['-xf', zipPath, '-C', CACHE_TOOLS_ROOT]);
       } catch {
         const psZip = zipPath.replace(/'/g, "''");
-        const psOut = TOOLS_ROOT.replace(/'/g, "''");
+        const psOut = CACHE_TOOLS_ROOT.replace(/'/g, "''");
         await runProcess('powershell.exe', [
           '-NoProfile',
           '-ExecutionPolicy',
@@ -185,8 +196,8 @@ async function ensureQpdf() {
       }
       await fs.rm(zipPath, { force: true });
 
-      await fs.access(QPDF_EXE);
-      return QPDF_EXE;
+      await fs.access(CACHE_QPDF_EXE);
+      return CACHE_QPDF_EXE;
     })().finally(() => {
       qpdfSetupPromise = null;
     });
