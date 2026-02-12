@@ -1,10 +1,10 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-contextBridge.exposeInMainWorld('pdfMergerAPI', {
-  pickPdfFiles: () => ipcRenderer.invoke('pick-pdf-files'),
+contextBridge.exposeInMainWorld('fileMergerAPI', {
+  pickFiles: () => ipcRenderer.invoke('pick-merge-files'),
   readFileMetadata: (paths) => ipcRenderer.invoke('read-file-metadata', paths),
   getMergePlan: (payload) => ipcRenderer.invoke('get-merge-plan', payload),
-  mergePdfs: (payload) => ipcRenderer.invoke('merge-pdfs', payload),
+  mergeFiles: (payload) => ipcRenderer.invoke('merge-files', payload),
   cancelMerge: () => ipcRenderer.invoke('cancel-merge'),
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowToggleMaximize: () => ipcRenderer.invoke('window-toggle-maximize'),

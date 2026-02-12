@@ -5,6 +5,7 @@ const emptyStateEl = document.getElementById('emptyState');
 const dropZone = document.getElementById('dropZone');
 const sortModeEl = document.getElementById('sortMode');
 const sortDirectionEl = document.getElementById('sortDirection');
+const outputFormatEl = document.getElementById('outputFormat');
 const outputNameEl = document.getElementById('outputName');
 const mergeModeHintEl = document.getElementById('mergeModeHint');
 const statusTextEl = document.getElementById('statusText');
@@ -13,6 +14,11 @@ const stopMergeBtn = document.getElementById('stopMergeBtn');
 const winMinBtn = document.getElementById('winMinBtn');
 const winMaxBtn = document.getElementById('winMaxBtn');
 const winCloseBtn = document.getElementById('winCloseBtn');
+const imagePreviewModalEl = document.getElementById('imagePreviewModal');
+const imagePreviewImgEl = document.getElementById('imagePreviewImg');
+const imagePreviewCaptionEl = document.getElementById('imagePreviewCaption');
+const imagePreviewCloseBtn = document.getElementById('imagePreviewCloseBtn');
+const SUPPORTED_FILE_PATTERN = /\.(pdf|pptx|ppt|png|jpe?g|bmp|gif|webp|tiff?)$/i;
 
 let files = [];
 let unsubscribeProgress;
@@ -22,6 +28,7 @@ let mergeInProgress = false;
 let cancelPending = false;
 let mergePlanRequestSeq = 0;
 let unsubscribeWindowState;
+let replaceBatchOnNextAdd = false;
 
 function formatDateTime(ms) {
   const date = new Date(ms);
@@ -67,6 +74,7 @@ function dedupeAndAppend(newItems) {
   files = merged;
   applySort();
   refreshMergePlan();
+  updateMergeButtonLabel();
 }
 
 function normalizeIncomingPath(p) {
@@ -87,17 +95,29 @@ function normalizeIncomingPath(p) {
   return raw;
 }
 
+function isSupportedInputPath(inputPath) {
+  return SUPPORTED_FILE_PATTERN.test(String(inputPath || ''));
+}
+
 async function addFilesFromPaths(paths) {
   if (!paths || paths.length === 0) return;
 
   const normalized = paths
     .map(normalizeIncomingPath)
     .filter(Boolean)
-    .filter((p) => /\.pdf$/i.test(p));
+    .filter(isSupportedInputPath);
 
   if (!normalized.length) return;
 
-  const metadata = await window.pdfMergerAPI.readFileMetadata(normalized);
+  if (replaceBatchOnNextAdd) {
+    files = [];
+    replaceBatchOnNextAdd = false;
+    setProgress(0);
+    setStatus('Ready');
+    setMergeModeHint('');
+  }
+
+  const metadata = await window.fileMergerAPI.readFileMetadata(normalized);
   dedupeAndAppend(metadata);
 }
 
@@ -121,7 +141,7 @@ function extractDroppedPaths(dataTransfer) {
       let filePath = file?.path || '';
       if (!filePath && file) {
         try {
-          filePath = window.pdfMergerAPI.getPathForFile(file) || '';
+          filePath = window.fileMergerAPI.getPathForFile(file) || '';
         } catch {
           filePath = '';
         }
@@ -139,7 +159,7 @@ function extractDroppedPaths(dataTransfer) {
         let itemPath = f.path || '';
         if (!itemPath) {
           try {
-            itemPath = window.pdfMergerAPI.getPathForFile(f) || '';
+            itemPath = window.fileMergerAPI.getPathForFile(f) || '';
           } catch {
             itemPath = '';
           }
@@ -162,21 +182,79 @@ function extractDroppedPaths(dataTransfer) {
       .filter((line) => /^file:\/\//i.test(line) || /^[a-zA-Z]:\\/.test(line))
   );
 
-  const candidates = [
-    { paths: fromUriList, priority: 4 },
-    { paths: fromFiles, priority: 3 },
-    { paths: fromItems, priority: 2 },
-    { paths: fromPlain, priority: 1 },
-  ].filter((candidate) => candidate.paths.length > 0);
+  const sources = [
+    { name: 'items', priority: 1, paths: fromItems },
+    { name: 'files', priority: 2, paths: fromFiles },
+    { name: 'uri', priority: 3, paths: fromUriList },
+    { name: 'plain', priority: 4, paths: fromPlain },
+  ].filter((source) => source.paths.length > 0);
 
-  if (!candidates.length) return [];
+  if (!sources.length) return [];
+  if (sources.length === 1) return sources[0].paths;
 
-  candidates.sort((a, b) => {
-    if (b.paths.length !== a.paths.length) return b.paths.length - a.paths.length;
-    return b.priority - a.priority;
+  const sameMembers = (a, b) => {
+    if (a.length !== b.length) return false;
+    const setA = new Set(a.map((p) => p.toLowerCase()));
+    for (const p of b) {
+      if (!setA.has(String(p).toLowerCase())) return false;
+    }
+    return true;
+  };
+
+  const pairwiseDisagreement = (a, b) => {
+    const indexB = new Map();
+    b.forEach((value, idx) => {
+      indexB.set(String(value).toLowerCase(), idx);
+    });
+
+    let inversions = 0;
+    for (let i = 0; i < a.length; i += 1) {
+      const ai = String(a[i]).toLowerCase();
+      const idxI = indexB.get(ai);
+      if (idxI == null) continue;
+      for (let j = i + 1; j < a.length; j += 1) {
+        const aj = String(a[j]).toLowerCase();
+        const idxJ = indexB.get(aj);
+        if (idxJ == null) continue;
+        if (idxI > idxJ) inversions += 1;
+      }
+    }
+    return inversions;
+  };
+
+  const scored = sources.map((source) => {
+    let comparisons = 0;
+    let inversions = 0;
+    for (const other of sources) {
+      if (other === source) continue;
+      if (!sameMembers(source.paths, other.paths)) continue;
+      comparisons += 1;
+      inversions += pairwiseDisagreement(source.paths, other.paths);
+    }
+    return { source, comparisons, inversions };
   });
 
-  return candidates[0].paths;
+  scored.sort((a, b) => {
+    if (b.comparisons !== a.comparisons) return b.comparisons - a.comparisons;
+    if (a.inversions !== b.inversions) return a.inversions - b.inversions;
+    return a.source.priority - b.source.priority;
+  });
+
+  return scored[0].source.paths;
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toFileUrl(filePath) {
+  const normalized = String(filePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  return `file:///${encodeURI(normalized)}`;
 }
 
 function render() {
@@ -189,13 +267,36 @@ function render() {
     li.draggable = true;
     li.dataset.index = String(idx);
 
+    const fileName = String(file?.name || '');
+    const escapedName = escapeHtml(fileName);
+    const kind = getFileKind(file);
+    const previewHtml = kind === 'image'
+      ? `
+        <button
+          type="button"
+          class="preview-btn"
+          data-preview-index="${idx}"
+          title="Preview image"
+          aria-label="Preview ${escapedName}"
+        >
+          <img class="file-thumb" alt="" src="${toFileUrl(file.path)}" loading="lazy" />
+        </button>
+      `
+      : '';
+
     li.innerHTML = `
       <div class="drag-handle" title="Drag to reorder">☰</div>
       <div class="file-main">
-        <div class="file-name" title="${file.name}">${idx + 1}. ${file.name}</div>
-        <div class="file-meta">Created: ${formatDateTime(file.createdMs)} | Size: ${formatSize(file.size)}</div>
+        <div class="file-name" title="${escapedName}">
+          <span class="file-index">${idx + 1}.</span>
+          <span class="file-name-text">${escapedName}</span>
+        </div>
+        <div class="file-meta">Modified: ${formatDateTime(file.modifiedMs || file.createdMs)} | Size: ${formatSize(file.size)}</div>
       </div>
-      <button class="remove-btn" data-remove="${idx}">Remove</button>
+      <div class="file-actions">
+        ${previewHtml}
+        <button class="remove-btn" data-remove="${idx}">Remove</button>
+      </div>
     `;
 
     li.addEventListener('dragstart', () => {
@@ -242,6 +343,26 @@ function render() {
 
     fileListEl.appendChild(li);
   });
+
+  updateOutputFormatControl();
+  updateMergeButtonLabel();
+}
+
+function openImagePreview(file) {
+  if (!imagePreviewModalEl || !imagePreviewImgEl || !file) return;
+  imagePreviewImgEl.src = toFileUrl(file.path);
+  imagePreviewImgEl.alt = String(file.name || 'Image preview');
+  if (imagePreviewCaptionEl) {
+    imagePreviewCaptionEl.textContent = String(file.name || '');
+  }
+  imagePreviewModalEl.hidden = false;
+}
+
+function closeImagePreview() {
+  if (!imagePreviewModalEl || !imagePreviewImgEl) return;
+  imagePreviewModalEl.hidden = true;
+  imagePreviewImgEl.src = '';
+  imagePreviewImgEl.alt = '';
 }
 
 function reorderManual(fromIndex, toIndex) {
@@ -283,7 +404,7 @@ function applySort() {
     }
 
     if (mode === 'created') {
-      return direction * (a.createdMs - b.createdMs);
+      return direction * (a.modifiedMs - b.modifiedMs);
     }
 
     return 0;
@@ -300,11 +421,74 @@ function setProgress(percent) {
   progressFillEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
 }
 
+function getFileKind(file) {
+  const explicitKind = String(file?.kind || '').toLowerCase();
+  if (explicitKind) return explicitKind;
+
+  const candidatePath = String(file?.path || file?.name || '').toLowerCase();
+  if (/\.(pdf)$/.test(candidatePath)) return 'pdf';
+  if (/\.(pptx)$/.test(candidatePath)) return 'pptx';
+  if (/\.(ppt)$/.test(candidatePath)) return 'ppt';
+  if (/\.(png|jpe?g|bmp|gif|webp|tiff?)$/.test(candidatePath)) return 'image';
+  return '';
+}
+
+function getFileTypeGroup() {
+  if (!files.length) return 'empty';
+
+  const allPdfs = files.every((f) => getFileKind(f) === 'pdf');
+  if (allPdfs) return 'pdfs';
+
+  const hasPdf = files.some((f) => getFileKind(f) === 'pdf');
+  if (hasPdf) return 'mixed-pdf';
+
+  const imageKinds = new Set(['image']);
+  const pptKinds = new Set(['ppt', 'pptx']);
+
+  const allImages = files.every((f) => imageKinds.has(getFileKind(f)));
+  if (allImages) return 'images';
+
+  const allPowerPoints = files.every((f) => pptKinds.has(getFileKind(f)));
+  if (allPowerPoints) return 'powerpoints';
+
+  return 'mixed';
+}
+
+function getIdleMergeLabel() {
+  const group = getFileTypeGroup();
+  if (group === 'pdfs') return 'Merge PDFs';
+  if (group === 'mixed-pdf') return 'Merge to PDF';
+  if (group === 'images') return 'Merge Photos';
+  if (group === 'powerpoints') return 'Merge PowerPoints';
+  return 'Merge Files';
+}
+
+function updateOutputFormatControl() {
+  if (!outputFormatEl) return;
+  const group = getFileTypeGroup();
+  const forcePdf = group === 'pdfs' || group === 'mixed-pdf';
+  outputFormatEl.disabled = forcePdf;
+  if (forcePdf) {
+    outputFormatEl.value = 'pdf';
+  }
+}
+
+function updateMergeButtonLabel() {
+  if (mergeInProgress) {
+    mergeBtn.textContent = 'Merging...';
+    mergeBtn.disabled = true;
+    return;
+  }
+
+  mergeBtn.disabled = false;
+  mergeBtn.textContent = getIdleMergeLabel();
+}
+
 function setMergeUiState(active) {
   mergeInProgress = active;
   stopMergeBtn.hidden = !active;
   mergeBtn.disabled = active;
-  mergeBtn.textContent = active ? 'Merging...' : 'Merge PDFs';
+  updateMergeButtonLabel();
 }
 
 function setMergeModeHint(text) {
@@ -327,31 +511,48 @@ async function refreshMergePlan() {
   const requestId = ++mergePlanRequestSeq;
 
   try {
-    const plan = await window.pdfMergerAPI.getMergePlan({
+    const plan = await window.fileMergerAPI.getMergePlan({
       files,
       outputName: outputNameEl.value,
+      outputFormat: outputFormatEl?.value,
     });
 
     if (requestId !== mergePlanRequestSeq) return;
 
-    if (plan?.mode !== 'slow') {
-      setMergeModeHint('');
+    if (plan?.mode === 'unsupported') {
+      if (plan.reason === 'mixed_requires_pdf') {
+        setMergeModeHint('Mixed PDF + PowerPoint/image batches can only be exported as PDF.');
+        return;
+      }
+
+      const unsupportedCount = Number(plan.unsupported || 0);
+      setMergeModeHint(`Unsupported files detected (${unsupportedCount}). Remove them to continue.`);
       return;
     }
 
-    if (plan.reason === 'memory') {
-      setMergeModeHint(
-        `Safe mode: total size ${formatSize(plan.totalBytes)} exceeds fast memory budget ${formatSize(plan.memoryLimitBytes)}. Merge will be slower.`
-      );
+    if (plan?.route === 'mixed') {
+      setMergeModeHint('Mixed batch will be converted and merged as PDF.');
       return;
     }
 
-    if (plan.reason === 'command_length') {
-      setMergeModeHint('Safe mode: file path list is very long, so merge will run in slower compatibility mode.');
+    if (plan?.route === 'pdf' && plan?.mode === 'slow') {
+      if (plan.reason === 'memory') {
+        setMergeModeHint(
+          `PDF safe mode: total size ${formatSize(plan.totalBytes)} exceeds fast memory budget ${formatSize(plan.memoryLimitBytes)}.`
+        );
+        return;
+      }
+
+      if (plan.reason === 'command_length') {
+        setMergeModeHint('PDF safe mode: input list is too long for direct command mode.');
+        return;
+      }
+
+      setMergeModeHint('PDF safe mode: merge will run in slower compatibility mode.');
       return;
     }
 
-    setMergeModeHint('Safe mode: merge will run in slower compatibility mode.');
+    setMergeModeHint('');
   } catch {
     if (requestId !== mergePlanRequestSeq) return;
     setMergeModeHint('');
@@ -372,7 +573,7 @@ function applyWindowState(state) {
 }
 
 async function openFilePicker() {
-  const paths = await window.pdfMergerAPI.pickPdfFiles();
+  const paths = await window.fileMergerAPI.pickFiles();
   await addFilesFromPaths(paths);
 }
 
@@ -383,7 +584,7 @@ async function merge() {
   }
 
   if (!files.length) {
-    setStatus('No files to merge. Add PDF files first.');
+    setStatus('No files to merge. Add PDFs, PowerPoints, or images first.');
     return;
   }
 
@@ -393,9 +594,10 @@ async function merge() {
   setStatus('Preparing merge...');
 
   try {
-    const result = await window.pdfMergerAPI.mergePdfs({
+    const result = await window.fileMergerAPI.mergeFiles({
       files,
       outputName: outputNameEl.value,
+      outputFormat: outputFormatEl?.value || 'pptx',
     });
 
     if (result.canceled) {
@@ -403,6 +605,7 @@ async function merge() {
       setStatus('Merge canceled.');
       setProgress(0);
     } else {
+      replaceBatchOnNextAdd = true;
       setStatus(`Done. Saved to: ${result.outputPath}`);
       setProgress(100);
     }
@@ -418,6 +621,7 @@ async function merge() {
 
 clearBtn.addEventListener('click', () => {
   files = [];
+  replaceBatchOnNextAdd = false;
   render();
   setProgress(0);
   setStatus('Ready');
@@ -429,7 +633,7 @@ stopMergeBtn.addEventListener('click', async () => {
   cancelPending = true;
   resetAfterCancelImmediate();
   try {
-    await window.pdfMergerAPI.cancelMerge();
+    await window.fileMergerAPI.cancelMerge();
   } catch {
     // Ignore cancellation transport errors; UI has already been reset.
   }
@@ -437,25 +641,48 @@ stopMergeBtn.addEventListener('click', async () => {
 
 if (winMinBtn) {
   winMinBtn.addEventListener('click', async () => {
-    await window.pdfMergerAPI.windowMinimize();
+    await window.fileMergerAPI.windowMinimize();
   });
 }
 
 if (winMaxBtn) {
   winMaxBtn.addEventListener('click', async () => {
-    const state = await window.pdfMergerAPI.windowToggleMaximize();
+    const state = await window.fileMergerAPI.windowToggleMaximize();
     applyWindowState(state);
   });
 }
 
 if (winCloseBtn) {
   winCloseBtn.addEventListener('click', async () => {
-    await window.pdfMergerAPI.windowClose();
+    await window.fileMergerAPI.windowClose();
   });
 }
 sortModeEl.addEventListener('change', applySort);
 sortDirectionEl.addEventListener('change', applySort);
 outputNameEl.addEventListener('input', refreshMergePlan);
+if (outputFormatEl) {
+  outputFormatEl.addEventListener('change', refreshMergePlan);
+}
+
+if (imagePreviewCloseBtn) {
+  imagePreviewCloseBtn.addEventListener('click', closeImagePreview);
+}
+
+if (imagePreviewModalEl) {
+  imagePreviewModalEl.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.dataset.closePreview === '1') {
+      closeImagePreview();
+    }
+  });
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && imagePreviewModalEl && !imagePreviewModalEl.hidden) {
+    closeImagePreview();
+  }
+});
 
 dropZone.addEventListener('click', openFilePicker);
 
@@ -463,7 +690,18 @@ fileListEl.addEventListener('click', (e) => {
   const target = e.target;
   if (!(target instanceof HTMLElement)) return;
 
-  const removeIndex = target.dataset.remove;
+  const previewBtn = target.closest('[data-preview-index]');
+  if (previewBtn instanceof HTMLElement && previewBtn.dataset.previewIndex != null) {
+    const idx = Number(previewBtn.dataset.previewIndex);
+    const file = files[idx];
+    if (file && getFileKind(file) === 'image') {
+      openImagePreview(file);
+    }
+    return;
+  }
+
+  const removeBtn = target.closest('[data-remove]');
+  const removeIndex = removeBtn instanceof HTMLElement ? removeBtn.dataset.remove : null;
   if (removeIndex != null) {
     files.splice(Number(removeIndex), 1);
     render();
@@ -497,7 +735,7 @@ window.addEventListener('drop', (e) => {
   }
 });
 
-unsubscribeProgress = window.pdfMergerAPI.onMergeProgress((update) => {
+unsubscribeProgress = window.fileMergerAPI.onMergeProgress((update) => {
   if (cancelPending && update.phase !== 'canceled' && update.phase !== 'done') {
     return;
   }
@@ -520,12 +758,12 @@ unsubscribeProgress = window.pdfMergerAPI.onMergeProgress((update) => {
   }
 
   if (update.phase === 'finalizing') {
-    setStatus('Finalizing merged PDF...');
+    setStatus('Finalizing merged file...');
     return;
   }
 
   if (update.phase === 'writing') {
-    setStatus('Writing merged PDF to disk...');
+    setStatus('Writing merged file to disk...');
     return;
   }
 
@@ -534,11 +772,11 @@ unsubscribeProgress = window.pdfMergerAPI.onMergeProgress((update) => {
   );
 });
 
-unsubscribeWindowState = window.pdfMergerAPI.onWindowState((state) => {
+unsubscribeWindowState = window.fileMergerAPI.onWindowState((state) => {
   applyWindowState(state);
 });
 
-window.pdfMergerAPI.windowIsMaximized().then((state) => {
+window.fileMergerAPI.windowIsMaximized().then((state) => {
   applyWindowState(state);
 }).catch(() => {});
 

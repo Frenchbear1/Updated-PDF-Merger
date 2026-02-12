@@ -20,16 +20,26 @@ body {
   font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   color: var(--text);
   background: radial-gradient(circle at top right, #202832, var(--bg-0) 45%);
+  overflow: hidden;
 }
 
 .app-shell {
   max-width: 1160px;
   margin: 0 auto;
   min-height: 100vh;
+  height: 100vh;
   padding: 24px 24px 104px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.app-shell::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .topbar {
@@ -160,7 +170,7 @@ body {
 
 .controls-row {
   display: grid;
-  grid-template-columns: 200px 170px 1fr auto;
+  grid-template-columns: 200px 170px 200px 1fr auto;
   gap: 12px;
   align-items: end;
 }
@@ -286,9 +296,62 @@ body {
 
 .file-name {
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.file-index {
+  color: #d6e1ed;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.file-name-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.file-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid #3f4b59;
+  flex: 0 0 auto;
+}
+
+.file-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #475463;
+  background: #1a2129;
+  padding: 1px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-btn:hover {
+  border-color: #6e839a;
+  background: #273341;
+}
+
+.preview-btn .file-thumb {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 6px;
 }
 
 .file-meta {
@@ -305,6 +368,70 @@ body {
   height: 32px;
   padding: 0 10px;
   cursor: pointer;
+}
+
+.image-preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+}
+
+.image-preview-modal[hidden] {
+  display: none !important;
+}
+
+.image-preview-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 12, 18, 0.74);
+}
+
+.image-preview-panel {
+  position: relative;
+  z-index: 1;
+  width: min(92vw, 1200px);
+  max-height: 88vh;
+  border-radius: 14px;
+  border: 1px solid #405062;
+  background: #111923;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.image-preview-close {
+  justify-self: end;
+  border: 1px solid #4a5b6f;
+  background: #243343;
+  color: #e8f0f8;
+  border-radius: 8px;
+  height: 34px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.image-preview-close:hover {
+  background: #2e4257;
+}
+
+.image-preview-img {
+  width: 100%;
+  max-height: calc(88vh - 110px);
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid #324355;
+  background: #0f1620;
+}
+
+.image-preview-caption {
+  font-size: 0.9rem;
+  color: #c6d3e2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .empty-state {
